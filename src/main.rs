@@ -1,6 +1,5 @@
 use nannou::prelude::*;
 use rand::Rng;
-use std::thread::sleep;
 use std::time::{Duration, SystemTime};
 
 static INTRO_TEXT: &str = "Test your reflexes
@@ -52,7 +51,7 @@ impl Color {
                 SNOW, SPRINGGREEN, STEELBLUE, TAN, TEAL, THISTLE, TOMATO, TURQUOISE, VIOLET,
                 WHEAT, WHITE, WHITESMOKE, YELLOW, YELLOWGREEN,
             ],
-            index: 7, // BLACK
+            index: 7, // start with BLACK
         }
     }
     fn get(&self) -> &Rgb<u8> {
@@ -76,7 +75,8 @@ struct Model {
     state: State,
     color: Color,
     timer: SystemTime,
-    millis: Vec<u128>,
+	rnd_duration: Duration,
+    reflex_millis: Vec<u128>,
     iters: u32,
     i: u32,
 }
@@ -86,14 +86,15 @@ impl Model {
             state: State::Intro,
             color: Color::new(),
             timer: SystemTime::now(),
-            millis: vec![],
+			rnd_duration: Duration::ZERO,
+            reflex_millis: vec![],
             iters: rand::thread_rng().gen_range(3..6),
             i: 0,
         }
     }
     fn reset(&mut self) {
         self.state = State::Intro;
-        self.millis.clear();
+        self.reflex_millis.clear();
         self.iters = rand::thread_rng().gen_range(3..6);
         self.i = 0;
     }
@@ -102,12 +103,10 @@ impl Model {
 fn main() {
     nannou::app(model)
         .update(update)
-        .loop_mode(LoopMode::Wait)
         .run();
 }
 
 fn model(app: &App) -> Model {
-    // Create a new window! Store the ID so we can refer to it later.
     let _window = app
         .new_window()
         .size(500, 300)
@@ -126,18 +125,24 @@ fn update(_app: &App, model: &mut Model, _update: Update) {
             model.state = State::Waiting;
         }
         State::Waiting => {
-            let millis = rand::thread_rng().gen_range(300..3000);
-            sleep(Duration::from_millis(millis));
-            model.color.next();
-            model.state = State::Running;
-            model.timer = SystemTime::now();
+			if model.rnd_duration == Duration::ZERO {
+				model.timer = SystemTime::now();
+				model.rnd_duration = 
+					Duration::from_millis(rand::thread_rng().gen_range(500..3000));
+			} else {
+				if SystemTime::now() > model.timer + model.rnd_duration {
+					model.timer = SystemTime::now();
+					model.rnd_duration = Duration::ZERO;
+					model.color.next();
+					model.state = State::Running;
+				}
+			}
         }
         State::Running => {}
         State::Stats => {}
     }
 }
 
-// Handle events related to the window and update the model if necessary
 fn event(_app: &App, model: &mut Model, event: WindowEvent) {
     match event {
         KeyPressed(Key::Space) => match model.state {
@@ -151,12 +156,12 @@ fn event(_app: &App, model: &mut Model, event: WindowEvent) {
                     model.reset();
                     return;
                 }
-                model.millis.push(et);
+                model.reflex_millis.push(et);
                 model.i += 1;
                 if model.i < model.iters {
                     model.state = State::Waiting;
                 } else {
-                    println!("Reaction times: {:?}", model.millis);
+                    println!("Reaction times: {:?}", model.reflex_millis);
                     model.state = State::Stats
                 }
             }
@@ -167,7 +172,6 @@ fn event(_app: &App, model: &mut Model, event: WindowEvent) {
     }
 }
 
-// Draw the state of your `Model` into the given `Frame` here.
 fn view(app: &App, model: &Model, frame: Frame) {
     frame.clear(BLACK);
 
@@ -179,8 +183,8 @@ fn view(app: &App, model: &Model, frame: Frame) {
                 State::Intro => format!("{INTRO_TEXT}"),
                 State::Stats => format!(
                     "Your mean reflex is {} ms\nYour fastest reaction was {} ms\n\nR to restart.",
-                    model.millis.iter().sum::<u128>() / model.millis.len() as u128,
-                    model.millis.iter().min().unwrap()
+                    model.reflex_millis.iter().sum::<u128>() / model.reflex_millis.len() as u128,
+                    model.reflex_millis.iter().min().unwrap()
                 ),
                 _ => format!(""),
             };
